@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+  <head>
+    <meta charset="UTF-8" />
+    <title>netflix波動度預測圖</title>
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <style>
+      body {
+        margin: 0;
+        font-family: "Segoe UI", sans-serif;
+        background-color: #141414;
+        color: #e5e5e5;
+        padding: 2rem;
+      }
+
+      h2 {
+        color: #e50914;
+        font-size: 2rem;
+        font-weight: bold;
+        margin-bottom: 1rem;
+      }
+
+      input[type="file"] {
+        background-color: #e50914;
+        color: white;
+        padding: 0.5rem 1rem;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 1rem;
+        margin-bottom: 2rem;
+      }
+
+      input[type="file"]::file-selector-button {
+        background-color: #b0060f;
+        color: white;
+        padding: 0.5rem;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+      }
+
+      #description {
+        font-size: 1rem;
+        line-height: 1.8;
+        margin-bottom: 2rem;
+        background-color: #222;
+        padding: 1rem 1.5rem;
+        border-left: 4px solid #e50914;
+        border-radius: 4px;
+      }
+
+      #description ul {
+        padding-left: 1.5rem;
+      }
+
+      #description strong {
+        font-weight: bold;
+      }
+
+      #chart {
+        width: 100%;
+        height: 600px;
+        background-color: #141414;
+      }
+
+      a {
+        color: #e50914;
+      }
+    </style>
+  </head>
+  <body>
+    <h2>Netflix股價波動度預測</h2>
+    <div id="description">
+      <p>
+        本圖表呈現四項指標隨時間的變化，所有數據已縮放至相近比例，以利觀察趨勢：
+      </p>
+      <ul>
+        <li>
+          <strong style="color: #d62728">紅色實線</strong
+          >：實際波動度，代表每日高低價差的真實變化。
+        </li>
+        <li>
+          <strong style="color: #1f77b4">藍色實線</strong
+          >：預測波動度，根據歷史資料與 Twitter 數據預測的結果。
+        </li>
+        <li>
+          <strong style="color: #ff7f0e">橘色實線</strong>：Twitter
+          情緒分數，代表當日整體市場正負情緒。
+        </li>
+        <li>
+          <strong style="color: #2ca02c">綠色實線</strong>：Twitter
+          發文數量，反映當日討論熱度。
+        </li>
+      </ul>
+      <p>透過上述比較，可分析社群討論與情緒是否與市場波動有同步或領先現象。</p>
+    </div>
+
+    <div id="chart"></div>
+
+    <script>
+      // 頁面載入時自動讀取 CSV 檔案
+      window.addEventListener("DOMContentLoaded", () => {
+        fetch("./data/Final_nflx_data_2018-2022.csv")
+          .then((response) => {
+            if (!response.ok) throw new Error("Network response was not ok");
+            return response.text();
+          })
+          .then((csvText) => {
+            const data = parseCSV(csvText);
+            const result = forecastVolatility(data);
+            renderPlotlyChart(result);
+          })
+          .catch((error) => {
+            console.error("讀取 CSV 檔案時發生錯誤:", error);
+          });
+      });
+
+      // CSV 解析函數
+      function parseCSV(csvText) {
+        const lines = csvText.trim().split("\n");
+        const headers = lines[0].split(",");
+        const rows = lines.slice(1).map((line) => {
+          const values = line.split(",");
+          const row = {};
+          headers.forEach((header, i) => {
+            const key = header.trim();
+            row[key] = isNaN(values[i])
+              ? values[i].trim()
+              : parseFloat(values[i]);
+          });
+          return row;
+        });
+        return rows;
+      }
+
+      // 計算波動度
+      function calculateVolatility(row) {
+        return row.High - row.Low;
+      }
+
+      // 計算移動平均
+      function rollingAverage(data, index, windowSize) {
+        if (index < windowSize) return null;
+        let sum = 0;
+        for (let i = index - windowSize; i < index; i++) {
+          sum += calculateVolatility(data[i]);
+        }
+        return sum / windowSize;
+      }
+
+      // 預測波動度
+      function forecastVolatility(data) {
+        const predictions = [];
+
+        for (let i = 10; i < data.length; i++) {
+          const rv1 = calculateVolatility(data[i - 1]); // 昨天的波動
+          const rv5 = rollingAverage(data, i, 5); // 最近5筆平均波動
+          const rv10 = rollingAverage(data, i, 10); // 最近10筆平均波動
+          const twt = data[i - 1].twt_count || 0; // 昨天的推文數量
+
+          // 論文中最重要的「預測公式」
+          const forecast =
+            2.4256 +
+            0.2408 * rv1 +
+            0.1298 * rv5 +
+            0.3967 * rv10 +
+            0.001164 * twt;
+
+          predictions.push({
+            date: data[i].date || data[i].Date,
+            actual: calculateVolatility(data[i]),
+            predicted: forecast,
+            twitterSentiment: data[i].P_mean || 0, // 假設你有該數據
+            twitterCount: data[i].twt_count || 0,
+          });
+        }
+
+        return predictions;
+      }
+
+      // 縮放數據，使得不同的數據在相同範圍內
+      function scaleData(data, min = 0, max = 1) {
+        const minVal = Math.min(...data);
+        const maxVal = Math.max(...data);
+        return data.map(
+          (d) => ((d - minVal) / (maxVal - minVal)) * (max - min) + min
+        );
+      }
+
+      // 繪製 Plotly 圖表
+      function renderPlotlyChart(result) {
+        const x = result.map((r) => r.date);
+        const yActual = result.map((r) => r.actual);
+        const yPredicted = result.map((r) => r.predicted);
+        const ySentiment = result.map((r) => r.twitterSentiment);
+        const yCount = result.map((r) => r.twitterCount);
+
+        // 對所有數據進行縮放處理
+        const yActualScaled = scaleData(yActual);
+        const yPredictedScaled = scaleData(yPredicted);
+        const ySentimentScaled = scaleData(ySentiment);
+        const yCountScaled = scaleData(yCount);
+
+        const trace1 = {
+          x: x,
+          y: yActualScaled,
+          name: "實際波動度",
+          mode: "lines",
+          line: { color: "#d62728" },
+        };
+
+        const trace2 = {
+          x: x,
+          y: yPredictedScaled,
+          name: "預測波動度",
+          mode: "lines",
+          line: { color: "#1f77b4" },
+        };
+
+        const trace3 = {
+          x: x,
+          y: ySentimentScaled,
+          name: "Twitter Sentiment",
+          mode: "lines",
+          line: { color: "#ff7f0e" },
+        };
+
+        const trace4 = {
+          x: x,
+          y: yCountScaled,
+          name: "Twitter Count",
+          mode: "lines",
+          line: { color: "#2ca02c" },
+        };
+
+        const layout = {
+          title: "實際波動度 vs. 預測波動度 vs. Twitter Sentiment & Count",
+          xaxis: { title: "日期" },
+          yaxis: { title: "縮放後的波動度/情緒值/發文數量" },
+          legend: { orientation: "h" },
+        };
+
+        Plotly.newPlot("chart", [trace1, trace2, trace3, trace4], layout);
+      }
+    </script>
+  </body>
+</html>
