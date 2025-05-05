@@ -101,7 +101,7 @@
     <script>
       // 頁面載入時自動讀取 CSV 檔案
       window.addEventListener("DOMContentLoaded", () => {
-        fetch("./data/Final_nflx_data_2018-2022.csv")
+        fetch("./Final_nflx_data_2018-2022.csv")
           .then((response) => {
             if (!response.ok) throw new Error("Network response was not ok");
             return response.text();
