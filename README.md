@@ -81,6 +81,7 @@ rv10: 前 10 日的平均波動度
 twt: 前一日的推文數量
 
 模型訓練：採用 Python 的 scikit-learn 套件進行線性回歸建模與係數估計。
+![python程式碼](https://colab.research.google.com/drive/1DSvQkgkvJ0Ig1Z_g9QrlBv2QdO7SmGzW?usp=sharing)
 
 ![Alt text](image.png)
 ![Alt text](image-1.png)
